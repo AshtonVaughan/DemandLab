@@ -13,6 +13,55 @@ export function loadWorkspace() {
   }
 }
 
+const bytesToBase64 = (bytes) => {
+  let binary = "";
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary);
+};
+
+const base64ToBytes = (value) => {
+  const binary = atob(value);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+};
+
+async function deriveKey(passphrase, salt) {
+  const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt, iterations: 250000 }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+}
+
+export async function encryptWorkspace(workspace, passphrase) {
+  if (!passphrase || passphrase.length < 8) throw new Error("Use a passphrase of at least eight characters.");
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(passphrase, salt);
+  const payload = new TextEncoder().encode(JSON.stringify({ ...workspace, version: 1, savedAt: new Date().toISOString() }));
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, payload);
+  return { version: 1, encrypted: true, algorithm: "AES-GCM", kdf: "PBKDF2-SHA256-250000", salt: bytesToBase64(salt), iv: bytesToBase64(iv), data: bytesToBase64(new Uint8Array(encrypted)) };
+}
+
+export async function decryptWorkspace(envelope, passphrase) {
+  try {
+    const salt = base64ToBytes(envelope.salt);
+    const iv = base64ToBytes(envelope.iv);
+    const key = await deriveKey(passphrase, salt);
+    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, base64ToBytes(envelope.data));
+    const workspace = JSON.parse(new TextDecoder().decode(decrypted));
+    if (!workspace || !Array.isArray(workspace.projects)) throw new Error("Invalid workspace payload.");
+    return workspace;
+  } catch {
+    throw new Error("The passphrase is incorrect or the encrypted workspace is damaged.");
+  }
+}
+
+export function saveEncryptedEnvelope(envelope) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(envelope));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function saveWorkspace(workspace) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...workspace, version: 1, savedAt: new Date().toISOString() }));

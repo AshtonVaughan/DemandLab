@@ -60,10 +60,13 @@ import {
 import {
   clearWorkspace,
   createId,
+  decryptWorkspace,
   downloadTextFile,
+  encryptWorkspace,
   exportWorkspace,
   importWorkspace,
   loadWorkspace,
+  saveEncryptedEnvelope,
   saveWorkspace,
 } from "./lib/storage";
 
@@ -492,8 +495,11 @@ function DataSourcesView({ project, onEdit, onUpdate, notify }) {
   return <div className="content section-page"><section className="page-heading"><div><span className="eyebrow">Administrative monitoring</span><h1>Data sources</h1><p>Coverage, freshness, provenance, and reliability for every signal.</p></div><button className="button dark" onClick={refresh}><RefreshCw size={15} /> Refresh checks</button></section><div className="source-health-grid"><article className="card actual-metric"><span>Coverage</span><strong>{coverage.coverage}%</strong><small>Populated expected fields</small></article><article className="card actual-metric"><span>Freshest observation</span><strong>{coverage.freshest ? new Date(coverage.freshest).toLocaleDateString() : "—"}</strong><small>From observed_at</small></article><article className="card actual-metric"><span>Records</span><strong>{coverage.rowCount}</strong><small>Parsed locally</small></article><article className="card actual-metric"><span>Last health check</span><strong>{checkedAt ? new Date(checkedAt).toLocaleTimeString() : "Never"}</strong><small>Manual check</small></article></div><article className="card source-monitor"><div className="card-title-row"><div><span className="section-label"><Database size={17} /> Source register</span><p>Only sources actually attached to this project appear here.</p></div></div><div className="source-row"><span className="lineage-dot user" /><div><b>Product concept</b><small>User-entered data</small></div><span>Fresh</span><span>Core fields</span><strong>User supplied</strong><button onClick={onEdit}><Pencil size={14} /> Edit</button></div>{project.catalogue ? <div className="source-row"><span className="lineage-dot csv" /><div><b>{project.catalogue.fileName}</b><small>{coverage.rowCount} rows · added {new Date(project.catalogue.uploadedAt).toLocaleDateString()}</small></div><span>{coverage.freshest ? new Date(coverage.freshest).toLocaleDateString() : "Unknown"}</span><span>{coverage.coverage}%</span><strong>{project.catalogue.reliability}</strong><button onClick={onEdit}><Upload size={14} /> Replace</button></div> : <div className="source-row missing-source"><span className="lineage-dot missing" /><div><b>Comparable catalogue</b><small>Not connected</small></div><span>—</span><span>0%</span><strong>Unavailable</strong><button onClick={onEdit}><Plus size={14} /> Add</button></div>}<div className="source-row missing-source"><span className="lineage-dot missing" /><div><b>Live market integrations</b><small>No external API or licensed source configured</small></div><span>—</span><span>0%</span><strong>Unavailable</strong><button onClick={() => notify("Live integrations require provider credentials and a server-side connector.", "info")}><Link2 size={14} /> Details</button></div></article><article className="card source-columns"><span className="section-label"><ClipboardCheck size={17} /> Field coverage</span><div>{coverage.expected.map((field) => <span className={coverage.present.includes(field) ? "present" : ""} key={field}>{coverage.present.includes(field) ? <Check size={11} /> : <X size={11} />}{field}</span>)}</div></article></div>;
 }
 
-function SettingsView({ workspace, setWorkspace, notify }) {
+function SettingsView({ workspace, setWorkspace, notify, encryptionEnabled, onEnableEncryption, onDisableEncryption }) {
   const [profile, setProfile] = useState(workspace.profile);
+  const [securityPassphrase, setSecurityPassphrase] = useState("");
+  const [securityConfirm, setSecurityConfirm] = useState("");
+  const [securityError, setSecurityError] = useState("");
   const importInput = useRef(null);
   useEffect(() => setProfile(workspace.profile), [workspace.profile]);
   const change = (event) => setProfile((current) => ({ ...current, [event.target.name]: event.target.type === "checkbox" ? event.target.checked : event.target.value }));
@@ -504,7 +510,18 @@ function SettingsView({ workspace, setWorkspace, notify }) {
     window.open(profile.stripePaymentLink, "_blank", "noopener,noreferrer");
     notify(`${plan} checkout opened in a new tab.`);
   };
-  return <div className="content section-page settings-page"><section className="page-heading"><div><span className="eyebrow">Account and organization</span><h1>Settings</h1><p>Manage local identity, billing configuration, privacy, and backups.</p></div><button className="button dark" onClick={save}><Save size={15} /> Save settings</button></section><div className="settings-grid"><div className="left-stack"><article className="card settings-card"><span className="section-label"><Users size={17} /> Organization</span><div className="field-grid"><Field label="Your name" name="name" value={profile.name} onChange={change} /><Field label="Email" name="email" value={profile.email} onChange={change} type="email" /><Field label="Organization" name="organization" value={profile.organization} onChange={change} /><label className="setup-field"><span>Role</span><select name="role" value={profile.role} onChange={change}><option>Founder</option><option>Product manager</option><option>Agency</option><option>Investor</option><option>Analyst</option></select></label><label className="setup-field"><span>Currency</span><select name="currency" value={profile.currency} onChange={change}><option>AUD</option><option>USD</option><option>GBP</option><option>EUR</option></select></label></div></article><article className="card settings-card"><span className="section-label"><CreditCard size={17} /> Billing</span><p className="settings-intro">GitHub Pages cannot safely hold secret Stripe keys. Add a public Stripe Payment Link to enable checkout buttons.</p><div className="billing-current"><span>Current plan</span><strong>{profile.plan}</strong></div><Field label="Stripe Payment Link" name="stripePaymentLink" value={profile.stripePaymentLink} onChange={change} type="url" placeholder="https://buy.stripe.com/..." hint="Public payment links only—never enter a secret key." /><div className="plan-grid">{[["Pro", "$99–$299/mo"],["Agency", "$500–$2,000/mo"],["Enterprise", "Custom"]].map(([plan, price]) => <button key={plan} onClick={() => upgrade(plan)}><b>{plan}</b><span>{price}</span><small>Open checkout <ExternalLink size={11} /></small></button>)}</div></article><article className="card settings-card"><span className="section-label"><ShieldCheck size={17} /> Privacy and training</span><label className="consent-row"><input type="checkbox" name="privateDataTrainingConsent" checked={profile.privateDataTrainingConsent} onChange={change} /><span><b>Allow private project data to be used for shared model improvement</b><small>Off by default. This local version does not transmit project data.</small></span></label></article></div><aside className="right-stack"><article className="card settings-card"><span className="section-label"><Database size={17} /> Backup and restore</span><p className="settings-intro">Export a complete JSON backup before clearing browser storage or switching devices.</p><button className="button secondary full" onClick={() => exportWorkspace(workspace)}><Download size={15} /> Export workspace</button><input ref={importInput} className="hidden-input" type="file" accept="application/json,.json" onChange={(event) => importBackup(event.target.files?.[0])} /><button className="button secondary full" onClick={() => importInput.current?.click()}><Upload size={15} /> Restore backup</button></article><article className="card settings-card danger-zone"><span className="section-label"><Trash2 size={17} /> Delete workspace</span><p className="settings-intro">Permanently remove all locally stored projects, reports, experiments, and settings.</p><button className="button danger full" onClick={() => { if (window.confirm("Delete every DemandLab project and setting from this browser? This cannot be undone.")) { clearWorkspace(); setWorkspace(clone(DEFAULT_WORKSPACE)); notify("Local workspace deleted."); } }}><Trash2 size={15} /> Delete all local data</button></article></aside></div></div>;
+  const enableEncryption = async () => {
+    setSecurityError("");
+    if (securityPassphrase.length < 8) return setSecurityError("Use at least eight characters.");
+    if (securityPassphrase !== securityConfirm) return setSecurityError("The passphrases do not match.");
+    try {
+      await onEnableEncryption(securityPassphrase);
+      setSecurityPassphrase(""); setSecurityConfirm("");
+    } catch (error) {
+      setSecurityError(error.message || "Encryption could not be enabled.");
+    }
+  };
+  return <div className="content section-page settings-page"><section className="page-heading"><div><span className="eyebrow">Account and organization</span><h1>Settings</h1><p>Manage local identity, billing configuration, privacy, and backups.</p></div><button className="button dark" onClick={save}><Save size={15} /> Save settings</button></section><div className="settings-grid"><div className="left-stack"><article className="card settings-card"><span className="section-label"><Users size={17} /> Organization</span><div className="field-grid"><Field label="Your name" name="name" value={profile.name} onChange={change} /><Field label="Email" name="email" value={profile.email} onChange={change} type="email" /><Field label="Organization" name="organization" value={profile.organization} onChange={change} /><label className="setup-field"><span>Role</span><select name="role" value={profile.role} onChange={change}><option>Founder</option><option>Product manager</option><option>Agency</option><option>Investor</option><option>Analyst</option></select></label><label className="setup-field"><span>Currency</span><select name="currency" value={profile.currency} onChange={change}><option>AUD</option><option>USD</option><option>GBP</option><option>EUR</option></select></label></div></article><article className="card settings-card"><span className="section-label"><CreditCard size={17} /> Billing</span><p className="settings-intro">GitHub Pages cannot safely hold secret Stripe keys. Add a public Stripe Payment Link to enable checkout buttons.</p><div className="billing-current"><span>Current plan</span><strong>{profile.plan}</strong></div><Field label="Stripe Payment Link" name="stripePaymentLink" value={profile.stripePaymentLink} onChange={change} type="url" placeholder="https://buy.stripe.com/..." hint="Public payment links only—never enter a secret key." /><div className="plan-grid">{[["Pro", "$99–$299/mo"],["Agency", "$500–$2,000/mo"],["Enterprise", "Custom"]].map(([plan, price]) => <button key={plan} onClick={() => upgrade(plan)}><b>{plan}</b><span>{price}</span><small>Open checkout <ExternalLink size={11} /></small></button>)}</div></article><article className="card settings-card"><span className="section-label"><ShieldCheck size={17} /> Privacy and training</span><label className="consent-row"><input type="checkbox" name="privateDataTrainingConsent" checked={profile.privateDataTrainingConsent} onChange={change} /><span><b>Allow private project data to be used for shared model improvement</b><small>Off by default. This local version does not transmit project data.</small></span></label></article></div><aside className="right-stack"><article className="card settings-card security-card"><span className="section-label"><LockKeyhole size={17} /> Local encryption</span>{encryptionEnabled ? <><div className="security-status"><Check size={14} /><span><b>Encryption enabled</b><small>AES-256-GCM with a PBKDF2-derived key. Passphrase is kept only for this session.</small></span></div><button className="button danger full" onClick={onDisableEncryption}>Disable encryption</button></> : <><p className="settings-intro">Protect the browser workspace with a passphrase. There is no password recovery.</p><Field label="Passphrase" name="securityPassphrase" value={securityPassphrase} onChange={(event) => setSecurityPassphrase(event.target.value)} type="password" /><Field label="Confirm passphrase" name="securityConfirm" value={securityConfirm} onChange={(event) => setSecurityConfirm(event.target.value)} type="password" />{securityError && <div className="file-error"><AlertCircle size={14} /> {securityError}</div>}<button className="button dark full" onClick={enableEncryption}><LockKeyhole size={15} /> Enable encryption</button></>}</article><article className="card settings-card"><span className="section-label"><Database size={17} /> Backup and restore</span><p className="settings-intro">Export a complete JSON backup before clearing browser storage or switching devices.</p><button className="button secondary full" onClick={() => exportWorkspace(workspace)}><Download size={15} /> Export workspace</button><input ref={importInput} className="hidden-input" type="file" accept="application/json,.json" onChange={(event) => importBackup(event.target.files?.[0])} /><button className="button secondary full" onClick={() => importInput.current?.click()}><Upload size={15} /> Restore backup</button></article><article className="card settings-card danger-zone"><span className="section-label"><Trash2 size={17} /> Delete workspace</span><p className="settings-intro">Permanently remove all locally stored projects, reports, experiments, and settings.</p><button className="button danger full" onClick={() => { if (window.confirm("Delete every DemandLab project and setting from this browser? This cannot be undone.")) { clearWorkspace(); setWorkspace(clone(DEFAULT_WORKSPACE)); notify("Local workspace deleted."); } }}><Trash2 size={15} /> Delete all local data</button></article></aside></div></div>;
 }
 
 function EmptyState({ icon: Icon, title, text, action, onAction }) { return <div className="empty-section card"><span><Icon size={27} /></span><h2>{title}</h2><p>{text}</p><button className="button dark" onClick={onAction}><Plus size={16} /> {action}</button></div>; }
@@ -512,8 +529,22 @@ function SectionNeedsProject({ title, onAction }) { return <div className="conte
 
 function HelpModal({ onClose }) { return <Modal title="DemandLab help" onClose={onClose}><div className="help-content"><p><b>1. Create a project</b><br />Enter a real concept and optional historical performance.</p><p><b>2. Attach comparable evidence</b><br />Use a permitted CSV. No restricted scraping is performed.</p><p><b>3. Review traceable outputs</b><br />Unavailable evidence remains unavailable. Every score exposes its source.</p><p><b>4. Run an experiment</b><br />Record actual results to improve future decisions.</p><p><b>5. Export and back up</b><br />Reports and workspace backups work entirely in your browser.</p><div className="formula-note"><ShieldCheck size={16} /> DemandLab is decision-support software, not a guarantee of product success.</div></div></Modal>; }
 
+function UnlockScreen({ onUnlock, onReset }) {
+  const [passphrase, setPassphrase] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const unlock = async () => {
+    setBusy(true); setError("");
+    try { await onUnlock(passphrase); } catch (unlockError) { setError(unlockError.message); } finally { setBusy(false); }
+  };
+  return <div className="unlock-screen"><div className="unlock-brand"><Logo /><b>DemandLab</b></div><article className="card unlock-card"><span className="unlock-icon"><LockKeyhole size={24} /></span><h1>Unlock your workspace</h1><p>This browser contains an AES-256-GCM encrypted DemandLab workspace.</p><label><span>Passphrase</span><input type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} onKeyDown={(event) => event.key === "Enter" && unlock()} autoFocus /></label>{error && <div className="file-error"><AlertCircle size={14} /> {error}</div>}<button className="button dark full" disabled={!passphrase || busy} onClick={unlock}>{busy ? "Unlocking…" : "Unlock workspace"}</button><button className="text-link danger-link" onClick={onReset}>Delete encrypted workspace</button><small>Passphrases are never stored. If it is lost, the data cannot be recovered.</small></article></div>;
+}
+
 export default function App() {
-  const [workspace, setWorkspace] = useState(() => loadWorkspace() || clone(DEFAULT_WORKSPACE));
+  const [initialRecord] = useState(() => loadWorkspace());
+  const [workspace, setWorkspace] = useState(() => initialRecord?.encrypted ? clone(DEFAULT_WORKSPACE) : initialRecord || clone(DEFAULT_WORKSPACE));
+  const [lockedEnvelope, setLockedEnvelope] = useState(() => initialRecord?.encrypted ? initialRecord : null);
+  const [encryptionPassphrase, setEncryptionPassphrase] = useState(null);
   const [active, setActive] = useState("Overview");
   const [collapsed, setCollapsed] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -524,8 +555,22 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
 
   useEffect(() => {
-    if (!saveWorkspace(workspace)) setToast({ message: "Browser storage is full. Export a backup, then remove large images or old projects.", type: "error", id: Date.now() });
-  }, [workspace]);
+    if (lockedEnvelope) return;
+    let cancelled = false;
+    const persist = async () => {
+      let saved;
+      if (encryptionPassphrase) {
+        const envelope = await encryptWorkspace(workspace, encryptionPassphrase);
+        if (cancelled) return;
+        saved = saveEncryptedEnvelope(envelope);
+      } else {
+        saved = saveWorkspace(workspace);
+      }
+      if (!saved && !cancelled) setToast({ message: "Browser storage is full. Export a backup, then remove large images or old projects.", type: "error", id: Date.now() });
+    };
+    persist().catch(() => { if (!cancelled) setToast({ message: "The encrypted workspace could not be saved.", type: "error", id: Date.now() }); });
+    return () => { cancelled = true; };
+  }, [workspace, encryptionPassphrase, lockedEnvelope]);
   const activeProject = workspace.projects.find((project) => project.id === workspace.activeProjectId) || null;
   const notify = (message, type = "success") => setToast({ message, type, id: Date.now() });
   const navigate = (section) => { setActive(section); window.scrollTo({ top: 0, behavior: "smooth" }); };
@@ -558,7 +603,8 @@ export default function App() {
   else if (active === "Experiments") view = <ExperimentsView project={activeProject} onUpdate={updateProject} onEdit={() => navigate("Projects")} notify={notify} />;
   else if (active === "Reports") view = <ReportsView project={activeProject} organization={workspace.profile.organization} onUpdate={updateProject} onEdit={() => navigate("Projects")} notify={notify} />;
   else if (active === "Data sources") view = <DataSourcesView project={activeProject} onEdit={activeProject ? beginEdit : () => navigate("Projects")} onUpdate={updateProject} notify={notify} />;
-  else view = <SettingsView workspace={workspace} setWorkspace={setWorkspace} notify={notify} />;
+  else view = <SettingsView workspace={workspace} setWorkspace={setWorkspace} notify={notify} encryptionEnabled={Boolean(encryptionPassphrase)} onEnableEncryption={async (passphrase) => { const envelope = await encryptWorkspace(workspace, passphrase); if (!saveEncryptedEnvelope(envelope)) throw new Error("Browser storage is full. Export a backup and try again."); setEncryptionPassphrase(passphrase); notify("Local workspace encryption enabled."); }} onDisableEncryption={() => { if (window.confirm("Disable local encryption and store this workspace as plain browser data?")) { setEncryptionPassphrase(null); saveWorkspace(workspace); notify("Local workspace encryption disabled.", "info"); } }} />;
 
+  if (lockedEnvelope) return <UnlockScreen onUnlock={async (passphrase) => { const decrypted = await decryptWorkspace(lockedEnvelope, passphrase); setWorkspace(decrypted); setEncryptionPassphrase(passphrase); setLockedEnvelope(null); }} onReset={() => { if (window.confirm("Delete the encrypted workspace from this browser? This cannot be undone.")) { clearWorkspace(); setLockedEnvelope(null); setWorkspace(clone(DEFAULT_WORKSPACE)); } }} />;
   return <div className="app-shell"><SideNav active={active} onNavigate={navigate} collapsed={collapsed} setCollapsed={setCollapsed} workspace={workspace} onHelp={() => setHelpOpen(true)} /><main className="main-area"><TopBar active={active} project={activeProject} workspace={workspace} onOpenSettings={() => navigate("Settings")} />{view}</main><Toast toast={toast} onClose={() => setToast(null)} />{helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}</div>;
 }

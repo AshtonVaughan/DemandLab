@@ -1,6 +1,6 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 
@@ -51,6 +51,28 @@ describe("DemandLab application", () => {
     await createProject(user, "Persistent Product");
     const stored = JSON.parse(localStorage.getItem("demandlab.workspace.v1"));
     expect(stored.projects[0].concept.name).toBe("Persistent Product");
+  });
+
+  it("encrypts the workspace and requires its session-only passphrase after reload", async () => {
+    const user = userEvent.setup();
+    const firstRender = render(<App />);
+    await user.click(screen.getAllByRole("button", { name: /^Settings/i })[0]);
+    await user.type(screen.getByLabelText(/^Passphrase$/i), "secure evidence passphrase");
+    await user.type(screen.getByLabelText(/Confirm passphrase/i), "secure evidence passphrase");
+    await user.click(screen.getByRole("button", { name: /Enable encryption/i }));
+
+    await waitFor(() => {
+      const stored = JSON.parse(localStorage.getItem("demandlab.workspace.v1"));
+      expect(stored.encrypted).toBe(true);
+      expect(JSON.stringify(stored)).not.toContain("DemandLab workspace");
+    });
+
+    firstRender.unmount();
+    render(<App />);
+    expect(screen.getByRole("heading", { name: /Unlock your workspace/i })).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/^Passphrase$/i), "secure evidence passphrase");
+    await user.click(screen.getByRole("button", { name: /Unlock workspace/i }));
+    expect(await screen.findByRole("heading", { name: /Start your first evidence profile/i })).toBeInTheDocument();
   });
 
   it("saves scenarios, experiments, report snapshots, source checks, and organization settings", async () => {
