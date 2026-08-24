@@ -130,6 +130,28 @@ describe("DemandLab application", () => {
     expect(screen.getByRole("heading", { name: "No projects yet" })).toBeInTheDocument();
   });
 
+  it("accepts experiment, project, and full-workspace deletion confirmations", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await createProject(user, "Disposable QA Project");
+
+    await user.click(screen.getByRole("button", { name: /^Experiments/i }));
+    await user.click(screen.getByRole("button", { name: /New experiment/i }));
+    await user.click(screen.getByRole("button", { name: /Save experiment/i }));
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    expect(screen.getByRole("heading", { name: "No experiments yet" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^Overview/i }));
+    await user.click(screen.getByRole("button", { name: "Delete project" }));
+    expect(screen.getByRole("heading", { name: "No projects yet" })).toBeInTheDocument();
+
+    await createProject(user, "Workspace Delete QA Project");
+    await user.click(screen.getAllByRole("button", { name: /^Settings/i })[0]);
+    await user.click(screen.getByRole("button", { name: /Delete all local data/i }));
+    await user.click(screen.getAllByRole("button", { name: /^Projects/i })[0]);
+    expect(screen.getByRole("heading", { name: "No projects yet" })).toBeInTheDocument();
+  });
+
   it("encrypts the workspace and requires its session-only passphrase after reload", async () => {
     const user = userEvent.setup();
     const firstRender = render(<App />);
@@ -150,6 +172,22 @@ describe("DemandLab application", () => {
     await user.type(screen.getByLabelText(/^Passphrase$/i), "secure evidence passphrase");
     await user.click(screen.getByRole("button", { name: /Unlock workspace/i }));
     expect(await screen.findByRole("heading", { name: /Start your first evidence profile/i })).toBeInTheDocument();
+  });
+
+  it("accepts deletion of a locked encrypted workspace", async () => {
+    const user = userEvent.setup();
+    const firstRender = render(<App />);
+    await user.click(screen.getAllByRole("button", { name: /^Settings/i })[0]);
+    await user.type(screen.getByLabelText(/^Passphrase$/i), "temporary encrypted workspace");
+    await user.type(screen.getByLabelText(/Confirm passphrase/i), "temporary encrypted workspace");
+    await user.click(screen.getByRole("button", { name: /Enable encryption/i }));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem("demandlab.workspace.v1")).encrypted).toBe(true));
+
+    firstRender.unmount();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /Delete encrypted workspace/i }));
+    expect(await screen.findByRole("heading", { name: /Start your first evidence profile/i })).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("demandlab.workspace.v1")).encrypted).not.toBe(true);
   });
 
   it("saves scenarios, experiments, report snapshots, source checks, and organization settings", async () => {
