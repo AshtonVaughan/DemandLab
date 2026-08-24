@@ -207,6 +207,21 @@ export function recommendExperiment(analysis) {
   return { type: "Preorder experiment", title: "Run a capped preorder test", reason: "Core commercial inputs are present; observed purchase behavior is the next strongest signal.", duration: 14, budget: 1200, successMetric: "Predefined preorder conversion and CAC threshold" };
 }
 
+export function evaluateSafety(project) {
+  const concept = project?.concept || project || {};
+  const productText = [concept.name, concept.category, concept.subcategory, concept.description, concept.features, concept.positioning].join(" ").toLowerCase();
+  const audienceText = String(concept.audience || "").toLowerCase();
+  const prohibitedTerms = ["firearm", "weapon", "illegal drug", "tobacco", "vape", "explosive"];
+  const regulatedTerms = ["medical", "therapeutic", "treat", "cure", "spf", "sunscreen", "acne", "eczema", "children", "child", "baby", "supplement", "finance", "investment"];
+  const sensitiveAudienceTerms = ["race", "ethnicity", "religion", "disability", "sexual orientation", "pregnant", "health condition"];
+  const prohibitedMatches = prohibitedTerms.filter((term) => productText.includes(term));
+  const regulatedMatches = regulatedTerms.filter((term) => productText.includes(term));
+  const audienceMatches = sensitiveAudienceTerms.filter((term) => audienceText.includes(term));
+  if (prohibitedMatches.length) return { level: "Blocked", reason: `Potentially prohibited product language: ${prohibitedMatches.join(", ")}.`, matches: prohibitedMatches };
+  if (regulatedMatches.length || audienceMatches.length) return { level: "Review required", reason: [...regulatedMatches.map((term) => `regulated claim: ${term}`), ...audienceMatches.map((term) => `sensitive audience: ${term}`)].join("; "), matches: [...regulatedMatches, ...audienceMatches] };
+  return { level: "Standard", reason: "No regulated-product or sensitive-audience keywords were detected by the baseline check.", matches: [] };
+}
+
 export function sourceCoverage(projectRecord) {
   const catalogue = projectRecord?.catalogue;
   const rows = catalogue?.data || [];

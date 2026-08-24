@@ -14,7 +14,12 @@ export function loadWorkspace() {
 }
 
 export function saveWorkspace(workspace) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...workspace, version: 1, savedAt: new Date().toISOString() }));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...workspace, version: 1, savedAt: new Date().toISOString() }));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function clearWorkspace() {

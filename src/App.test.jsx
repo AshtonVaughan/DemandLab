@@ -5,6 +5,15 @@ import userEvent from "@testing-library/user-event";
 import App from "./App";
 
 describe("DemandLab application", () => {
+  async function createProject(user, name = "User Product") {
+    await user.click(screen.getByRole("button", { name: /Create project/i }));
+    await user.type(screen.getByLabelText(/Product name/i), name);
+    await user.type(screen.getByLabelText(/^Category/i), "Skincare");
+    await user.type(screen.getByLabelText(/Sales region/i), "Australia");
+    await user.type(screen.getByLabelText(/Retail price/i), "49");
+    await user.click(screen.getByRole("button", { name: /Create project/i }));
+  }
+
   beforeEach(() => localStorage.clear());
   afterEach(() => cleanup());
 
@@ -39,13 +48,37 @@ describe("DemandLab application", () => {
   it("persists a created project in local storage", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: /Create project/i }));
-    await user.type(screen.getByLabelText(/Product name/i), "Persistent Product");
-    await user.type(screen.getByLabelText(/^Category/i), "Skincare");
-    await user.type(screen.getByLabelText(/Sales region/i), "Australia");
-    await user.type(screen.getByLabelText(/Retail price/i), "35");
-    await user.click(screen.getByRole("button", { name: /Create project/i }));
+    await createProject(user, "Persistent Product");
     const stored = JSON.parse(localStorage.getItem("demandlab.workspace.v1"));
     expect(stored.projects[0].concept.name).toBe("Persistent Product");
+  });
+
+  it("saves scenarios, experiments, report snapshots, source checks, and organization settings", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await createProject(user, "Workflow Product");
+
+    await user.click(screen.getByRole("button", { name: /Save scenario/i }));
+    expect(screen.getByText(/Scenario saved/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^Experiments/i }));
+    await user.click(screen.getByRole("button", { name: /New experiment/i }));
+    expect(screen.getByRole("dialog", { name: /Create experiment/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Save experiment/i }));
+    expect(screen.getByText(/Experiment saved/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^Reports/i }));
+    await user.click(screen.getByRole("button", { name: /Save snapshot/i }));
+    expect(screen.getByText(/Report snapshot saved/i)).toBeInTheDocument();
+
+    await user.click(screen.getAllByRole("button", { name: /^Data sources/i })[0]);
+    await user.click(screen.getByRole("button", { name: /Refresh checks/i }));
+    expect(screen.getByText(/Source health recalculated/i)).toBeInTheDocument();
+
+    await user.click(screen.getAllByRole("button", { name: /^Settings/i })[0]);
+    await user.clear(screen.getByLabelText("Organization"));
+    await user.type(screen.getByLabelText("Organization"), "Evidence Org");
+    await user.click(screen.getByRole("button", { name: /Save settings/i }));
+    expect(screen.getByText("Evidence Org")).toBeInTheDocument();
   });
 });

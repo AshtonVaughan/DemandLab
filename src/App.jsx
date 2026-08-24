@@ -50,6 +50,7 @@ import { parseCsv, csvToText } from "./lib/csv";
 import {
   analyzeProject,
   calculateScenario,
+  evaluateSafety,
   formatMoney,
   formatNumber,
   recommendExperiment,
@@ -366,6 +367,7 @@ function EvidenceRing({ value, emptyLabel = "ready" }) {
 
 function Overview({ project, onEdit, onDelete, onUpdate, onNavigate, notify }) {
   const analysis = useMemo(() => analyzeProject(project), [project]);
+  const safety = useMemo(() => evaluateSafety(project), [project]);
   const recommendation = useMemo(() => recommendExperiment(analysis), [analysis]);
   const [showAssumptions, setShowAssumptions] = useState(false);
   const [scenario, setScenario] = useState(() => ({
@@ -394,6 +396,7 @@ function Overview({ project, onEdit, onDelete, onUpdate, onNavigate, notify }) {
     <div className="content real-dashboard">
       <section className="page-heading"><div><span className="eyebrow"><span className="live-dot" /> Updated {new Date(project.updatedAt).toLocaleString()}</span><h1>{project.concept.name}</h1><p>{project.concept.category} · {project.concept.region}{project.concept.audience ? ` · ${project.concept.audience}` : ""}</p></div><div className="heading-actions"><button className="button secondary" onClick={onEdit}><Pencil size={15} /> Edit inputs</button><button className="button secondary" onClick={() => onNavigate("Reports")}><FileText size={15} /> Report</button><button className="icon-button more" aria-label="Delete project" onClick={onDelete}><Trash2 size={17} /></button></div></section>
       <div className="source-boundary"><ShieldCheck size={16} /><p><b>No synthetic records.</b> Calculated values use your inputs and the attached catalogue. Missing signals remain unavailable.</p></div>
+      <div className={`safety-boundary ${safety.level.toLowerCase().replaceAll(" ", "-")}`}><ShieldCheck size={16} /><p><b>Safety check: {safety.level}.</b> {safety.reason}</p></div>
       <section className="card score-card complete-score-card">
         <div className="score-summary"><div className="section-label"><Gauge size={17} /> Demand score</div><div className="score-main"><EvidenceRing value={analysis.demandScore} emptyLabel="score" /><div className="score-copy">{analysis.demandScore !== null ? <span className="rating-pill"><Sparkles size={13} /> Rules-based estimate</span> : <span className="neutral-pill"><AlertCircle size={13} /> Insufficient evidence</span>}<h2>{analysis.demandScore !== null ? `${analysis.demandScore}/100 opportunity estimate` : "Not enough supported sub-scores"}</h2><p>A total appears only when at least five traceable sub-scores are available. Model: {analysis.modelVersion}.</p></div></div></div>
         <div className="score-breakdown"><div className="breakdown-head"><span>Visible sub-scores</span><span>Evidence source</span></div>{analysis.scoreParts.map((part) => <div className="score-row expanded" key={part.key}><span>{part.label}</span><div className="score-bar"><i className={Number.isFinite(part.value) ? "mint" : "empty"} style={{ width: `${part.value || 0}%` }} /></div><strong>{Number.isFinite(part.value) ? part.value : "—"}</strong><em className="source-label">{part.source}</em></div>)}</div>
@@ -514,7 +517,9 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [helpOpen, setHelpOpen] = useState(false);
 
-  useEffect(() => { saveWorkspace(workspace); }, [workspace]);
+  useEffect(() => {
+    if (!saveWorkspace(workspace)) setToast({ message: "Browser storage is full. Export a backup, then remove large images or old projects.", type: "error", id: Date.now() });
+  }, [workspace]);
   const activeProject = workspace.projects.find((project) => project.id === workspace.activeProjectId) || null;
   const notify = (message, type = "success") => setToast({ message, type, id: Date.now() });
   const navigate = (section) => { setActive(section); window.scrollTo({ top: 0, behavior: "smooth" }); };

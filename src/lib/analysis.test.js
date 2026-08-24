@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analyzeProject, calculateScenario, recommendExperiment, scoreComparable, sourceCoverage } from "./analysis";
+import { analyzeProject, calculateScenario, evaluateSafety, recommendExperiment, scoreComparable, sourceCoverage } from "./analysis";
 
 const project = {
   concept: {
@@ -68,5 +68,12 @@ describe("traceable analysis", () => {
     expect(coverage.present).toHaveLength(11);
     expect(coverage.freshest).toMatch(/^2026-08-02/);
     expect(recommendExperiment(analyzeProject({ concept: project.concept, catalogue: null })).type).toBe("Comparable research");
+  });
+
+  it("flags prohibited, regulated, and sensitive-audience language", () => {
+    expect(evaluateSafety({ category: "Skincare", description: "Treat eczema" }).level).toBe("Review required");
+    expect(evaluateSafety({ category: "Weapon accessories" }).level).toBe("Blocked");
+    expect(evaluateSafety({ category: "Skincare", audience: "People with a health condition" }).level).toBe("Review required");
+    expect(evaluateSafety({ category: "Skincare", description: "Daily moisturiser" }).level).toBe("Standard");
   });
 });

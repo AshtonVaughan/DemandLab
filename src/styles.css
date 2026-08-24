@@ -159,6 +159,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(117,104,239,
 .source-boundary { display: flex; align-items: center; gap: 9px; margin: -6px 0 18px; padding: 11px 14px; border: 1px solid #d8e7de; border-radius: 9px; color: #527061; background: #f5faf7; }
 .source-boundary svg { flex: 0 0 auto; color: var(--green); }
 .source-boundary p { margin: 0; font-size: 9.5px; }
+.safety-boundary { display: flex; align-items: center; gap: 9px; margin: -8px 0 18px; padding: 10px 14px; border: 1px solid #dce3df; border-radius: 9px; color: #5f6c66; background: #f8faf8; }
+.safety-boundary svg { flex: 0 0 auto; color: #718078; }.safety-boundary p { margin: 0; font-size: 9px; }
+.safety-boundary.review-required { color: #7e6237; border-color: #eadbbd; background: #fcf8ed; }.safety-boundary.review-required svg { color: #b78336; }
+.safety-boundary.blocked { color: #914735; border-color: #edcfc7; background: #fff5f2; }.safety-boundary.blocked svg { color: #bd6049; }
 .real-score-card { min-height: 232px; display: grid; grid-template-columns: 1.05fr .95fr; margin-bottom: 17px; overflow: hidden; }
 .readiness-summary { padding: 25px 28px; border-right: 1px solid var(--line); }
 .readiness-summary .score-main { margin-top: 17px; }
