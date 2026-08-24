@@ -14,7 +14,7 @@ describe("DemandLab application", () => {
     await user.click(screen.getByRole("button", { name: /Create project/i }));
   }
 
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => { localStorage.clear(); window.confirm = () => true; });
   afterEach(() => cleanup());
 
   it("starts empty without fabricated product data", () => {
@@ -51,6 +51,83 @@ describe("DemandLab application", () => {
     await createProject(user, "Persistent Product");
     const stored = JSON.parse(localStorage.getItem("demandlab.workspace.v1"));
     expect(stored.projects[0].concept.name).toBe("Persistent Product");
+  });
+
+  it("lets a user cancel a new project without leaving a draft behind", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /Create project/i }));
+    await user.type(screen.getByLabelText(/Product name/i), "Unsaved QA Draft");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.getByRole("heading", { name: "Projects" })).toBeInTheDocument();
+    expect(screen.queryByText("Unsaved QA Draft")).not.toBeInTheDocument();
+  });
+
+  it("uploads and removes an image, rejects an invalid CSV, and previews a valid CSV", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+    await user.click(screen.getByRole("button", { name: /Create project/i }));
+
+    const [imageInput, csvInput] = container.querySelectorAll('input[type="file"]');
+    await user.upload(imageInput, new File(["<svg></svg>"], "qa-image.svg", { type: "image/svg+xml" }));
+    expect(await screen.findByRole("button", { name: "Replace image" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Remove" }));
+    expect(screen.getByRole("button", { name: "Choose image" })).toBeInTheDocument();
+
+    await user.upload(csvInput, new File(["name,product_name\nDuplicate,Header"], "invalid.csv", { type: "text/csv" }));
+    expect(await screen.findByText(/same field name/i)).toBeInTheDocument();
+
+    const validCsv = "product_name,brand,category,price,rating,reviews,monthly_sales,observed_at\nQA Input Serum,QA Brand,Skincare,42,4.6,310,185,2026-08-20";
+    await user.upload(csvInput, new File([validCsv], "qa-input.csv", { type: "text/csv" }));
+    expect(await screen.findByText("QA Input Serum")).toBeInTheDocument();
+    expect(screen.getByText(/1 records/)).toBeInTheDocument();
+  });
+
+  it("validates Stripe links and renders configured checkout actions as real links", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getAllByRole("button", { name: /^Settings/i })[0]);
+
+    await user.click(screen.getByText("Pro").closest("button"));
+    expect(screen.getByText(/Add a Stripe Payment Link/i)).toBeInTheDocument();
+
+    const paymentLink = screen.getByLabelText(/Stripe Payment Link/i);
+    await user.type(paymentLink, "https://example.com/not-stripe");
+    await user.click(screen.getByRole("button", { name: /Save settings/i }));
+    expect(screen.getByText(/Use a valid https:\/\/buy\.stripe\.com/i)).toBeInTheDocument();
+
+    await user.clear(paymentLink);
+    await user.type(paymentLink, "https://buy.stripe.com/test_qa_demandlab");
+    const checkoutLinks = screen.getAllByRole("link", { name: /Open checkout/i });
+    expect(checkoutLinks).toHaveLength(3);
+    checkoutLinks.forEach((link) => expect(link).toHaveAttribute("href", "https://buy.stripe.com/test_qa_demandlab"));
+  });
+
+  it("asks before replacing a populated workspace from a backup", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+    await createProject(user, "Keep This Project");
+    await user.click(screen.getAllByRole("button", { name: /^Settings/i })[0]);
+    const restoreInput = container.querySelector('input[accept="application/json,.json"]');
+    const emptyBackup = JSON.stringify({
+      version: 1,
+      profile: { name: "Restored", email: "", organization: "Restored Workspace", role: "Founder", currency: "AUD", plan: "Free", stripePaymentLink: "", privateDataTrainingConsent: false },
+      projects: [],
+      activeProjectId: null,
+    });
+
+    window.confirm = () => false;
+    await user.upload(restoreInput, new File([emptyBackup], "dismissed-backup.json", { type: "application/json" }));
+    await user.click(screen.getAllByRole("button", { name: /^Projects/i })[0]);
+    expect(screen.getAllByText("Keep This Project").length).toBeGreaterThan(0);
+
+    await user.click(screen.getAllByRole("button", { name: /^Settings/i })[0]);
+    window.confirm = () => true;
+    const currentRestoreInput = container.querySelector('input[accept="application/json,.json"]');
+    await user.upload(currentRestoreInput, new File([emptyBackup], "accepted-backup.json", { type: "application/json" }));
+    await user.click(screen.getAllByRole("button", { name: /^Projects/i })[0]);
+    expect(screen.getByRole("heading", { name: "No projects yet" })).toBeInTheDocument();
   });
 
   it("encrypts the workspace and requires its session-only passphrase after reload", async () => {
