@@ -21,6 +21,22 @@ export const average = (values) => {
   return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null;
 };
 
+export const percentile = (values, quantile) => {
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  const position = (sorted.length - 1) * quantile;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  return lower === upper ? sorted[lower] : sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
+};
+
+function complaintThemes(rows) {
+  const stopWords = new Set(["with", "this", "that", "from", "have", "were", "very", "product", "products", "when", "after", "about", "would", "could", "there", "their", "they", "them", "your"]);
+  const counts = new Map();
+  rows.forEach((row) => String(row.review_complaints || "").toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 3 && !stopWords.has(word)).forEach((word) => counts.set(word, (counts.get(word) || 0) + 1)));
+  return [...counts.entries()].sort((left, right) => right[1] - left[1]).slice(0, 4).map(([theme, count]) => ({ theme, count }));
+}
+
 export const formatMoney = (value, digits = 0, currency = "AUD") => {
   if (!Number.isFinite(value)) return "—";
   return new Intl.NumberFormat("en-AU", { style: "currency", currency, maximumFractionDigits: digits }).format(value);
@@ -72,9 +88,13 @@ export function analyzeProject(projectRecord) {
   const price = toNumber(project.retailPrice);
   const cost = toNumber(project.unitCost);
   const traffic = toNumber(project.monthlyTraffic);
+  const completedExperimentConversions = (projectRecord?.experiments || []).filter((experiment) => experiment.status === "Complete").map((experiment) => toNumber(experiment.observedConversion)).filter(Number.isFinite);
+  const completedExperimentCacs = (projectRecord?.experiments || []).filter((experiment) => experiment.status === "Complete").map((experiment) => toNumber(experiment.observedCac)).filter(Number.isFinite);
+  const experimentConversion = median(completedExperimentConversions);
+  const experimentCac = median(completedExperimentCacs);
   const forecastConversions = {
     low: toNumber(project.conversionLow),
-    expected: toNumber(project.conversionExpected),
+    expected: Number.isFinite(experimentConversion) ? experimentConversion : toNumber(project.conversionExpected),
     high: toNumber(project.conversionHigh),
   };
   const planningReady = Number.isFinite(traffic) && Number.isFinite(price) && Object.values(forecastConversions).every(Number.isFinite);
@@ -98,6 +118,8 @@ export function analyzeProject(projectRecord) {
   const evidenceReadiness = Math.round(((conceptChecks.filter(Boolean).length + performanceChecks.filter(Boolean).length + evidenceComplete) / (conceptChecks.length + performanceChecks.length + evidenceColumns.length)) * 100);
 
   const medianPrice = median(prices);
+  const lowerPrice = percentile(prices, 0.25);
+  const upperPrice = percentile(prices, 0.75);
   const priceFit = Number.isFinite(price) && Number.isFinite(medianPrice) && medianPrice > 0
     ? Math.round(clamp(100 - Math.abs(price - medianPrice) / medianPrice * 100))
     : null;
@@ -133,12 +155,29 @@ export function analyzeProject(projectRecord) {
     .map((row) => ({ ...row, similarity: scoreComparable(project, row) }))
     .sort((left, right) => (right.similarity ?? -1) - (left.similarity ?? -1));
 
+  const themes = complaintThemes(rows);
+  const priceRecommendation = Number.isFinite(price) && Number.isFinite(lowerPrice) && Number.isFinite(upperPrice)
+    ? {
+        status: price < lowerPrice ? "Below comparable range" : price > upperPrice ? "Above comparable range" : "Within comparable range",
+        message: price < lowerPrice
+          ? `The proposed price is below the observed middle 50% (${formatMoney(lowerPrice, 2)}–${formatMoney(upperPrice, 2)}). Test whether a higher price preserves conversion.`
+          : price > upperPrice
+            ? `The proposed price is above the observed middle 50% (${formatMoney(lowerPrice, 2)}–${formatMoney(upperPrice, 2)}). Validate the premium before launch.`
+            : `The proposed price sits inside the observed middle 50% (${formatMoney(lowerPrice, 2)}–${formatMoney(upperPrice, 2)}).`,
+        source: `${prices.length} uploaded prices`,
+      }
+    : null;
+  const positioningRecommendation = themes.length
+    ? { status: "Observed review gap", message: `Consider addressing recurring comparable complaints: ${themes.map((item) => item.theme).join(", ")}.`, source: `${rows.filter((row) => row.review_complaints).length} complaint records`, themes }
+    : null;
+
   const assumptions = [
     planningReady ? `Monthly qualified traffic remains at ${formatNumber(traffic)}.` : null,
     planningReady ? "Conversion inputs supplied by the user remain applicable for 12 months." : null,
     Number.isFinite(price) ? `Retail price remains ${formatMoney(price, 2)}.` : null,
     Number.isFinite(cost) ? `Unit cost remains ${formatMoney(cost, 2)} before fulfilment and returns.` : null,
-    Number.isFinite(toNumber(project.cac)) ? `Observed CAC remains ${formatMoney(toNumber(project.cac), 2)}.` : null,
+    Number.isFinite(experimentCac ?? toNumber(project.cac)) ? `Observed CAC remains ${formatMoney(experimentCac ?? toNumber(project.cac), 2)}.` : null,
+    Number.isFinite(experimentConversion) ? `Expected conversion uses the median completed-experiment result of ${formatNumber(experimentConversion, 2)}%.` : null,
   ].filter(Boolean);
   const invalidators = [
     !monthlySales.length ? "No observed comparable sales data is available." : null,
@@ -149,13 +188,15 @@ export function analyzeProject(projectRecord) {
     !catalogue?.headers?.includes("observed_at") ? "Comparable freshness cannot be verified without observed_at." : null,
   ].filter(Boolean);
 
-  const confidence = evidenceReadiness >= 80 && monthlySales.length >= 5 && planningReady ? "High" : evidenceReadiness >= 50 && planningReady ? "Medium" : "Low";
+  const confidence = (evidenceReadiness >= 80 && monthlySales.length >= 5 && planningReady) || (planningReady && completedExperimentConversions.length >= 2) ? "High" : evidenceReadiness >= 50 && planningReady ? "Medium" : "Low";
 
   return {
     rows,
     comparableRows,
     rowCount: rows.length,
     medianPrice,
+    lowerPrice,
+    upperPrice,
     medianRating: median(ratings),
     totalReviews: reviews.length ? reviews.reduce((sum, value) => sum + value, 0) : null,
     observedSales: monthlySales.length ? monthlySales.reduce((sum, value) => sum + value, 0) : null,
@@ -169,6 +210,12 @@ export function analyzeProject(projectRecord) {
     traffic,
     planningReady,
     projection,
+    experimentConversion,
+    experimentCac,
+    completedExperimentCount: completedExperimentConversions.length,
+    forecastSource: Number.isFinite(experimentConversion) ? "Completed experiment results" : "User baseline inputs",
+    priceRecommendation,
+    positioningRecommendation,
     evidenceReadiness,
     scoreParts,
     availableScoreParts,

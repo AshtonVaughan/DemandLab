@@ -172,6 +172,11 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(117,104,239,
 .unavailable-score h3 { margin: 8px 0 6px; font: 700 18px "Manrope"; }
 .unavailable-score p { max-width: 360px; margin: 0; color: #77827d; font-size: 10px; line-height: 1.55; }
 .actual-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 11px; margin-bottom: 17px; }
+.recommendation-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 17px; }
+.recommendation-card { padding: 20px 22px; }
+.recommendation-card h3 { margin: 14px 0 6px; font: 700 13px "Manrope"; }
+.recommendation-card p { margin: 0 0 10px; color: #6f7c76; font-size: 9px; line-height: 1.55; }
+.recommendation-card small { color: #929b97; font-size: 8px; }
 .actual-metric { min-width: 0; display: grid; gap: 5px; padding: 16px; }
 .actual-metric span { color: #7f8984; font-size: 8.5px; }
 .actual-metric strong { overflow: hidden; font: 700 18px "Manrope"; letter-spacing: -.4px; white-space: nowrap; text-overflow: ellipsis; }
@@ -404,6 +409,7 @@ select, textarea { font: inherit; }
   .score-row.expanded { grid-template-columns: 110px 1fr 26px; }.score-row.expanded .source-label { display: none; }
   .report-sections { grid-template-columns: 1fr; }
   .source-row { grid-template-columns: 14px 1fr 70px; }.source-row > span, .source-row > strong { display: none; }
+  .recommendation-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 580px) {
   .modal-backdrop { padding: 8px; }.modal-form-grid { grid-template-columns: 1fr; }

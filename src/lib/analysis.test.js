@@ -26,11 +26,11 @@ const project = {
     channelFitScore: "75",
   },
   catalogue: {
-    headers: ["product_name", "brand", "category", "features", "price", "rating", "reviews", "monthly_sales", "conversion_rate", "cac", "url", "source", "observed_at"],
+    headers: ["product_name", "brand", "category", "features", "price", "rating", "reviews", "review_complaints", "monthly_sales", "conversion_rate", "cac", "url", "source", "observed_at"],
     data: [
-      { product_name: "Barrier Serum", brand: "A", category: "Skincare", features: "ceramide barrier", price: "38", rating: "4.5", reviews: "200", monthly_sales: "900", conversion_rate: "2", cac: "24", url: "https://example.com/a", source: "Licensed", observed_at: "2026-08-01" },
-      { product_name: "Calming Serum", brand: "B", category: "Skincare", features: "calming barrier", price: "42", rating: "4.2", reviews: "120", monthly_sales: "700", conversion_rate: "1.8", cac: "28", url: "https://example.com/b", source: "Licensed", observed_at: "2026-08-02" },
-      { product_name: "Daily Serum", brand: "C", category: "Skincare", features: "daily hydration", price: "35", rating: "4.0", reviews: "80", monthly_sales: "500", conversion_rate: "1.5", cac: "30", url: "https://example.com/c", source: "Licensed", observed_at: "2026-07-30" },
+      { product_name: "Barrier Serum", brand: "A", category: "Skincare", features: "ceramide barrier", price: "38", rating: "4.5", reviews: "200", review_complaints: "sticky texture", monthly_sales: "900", conversion_rate: "2", cac: "24", url: "https://example.com/a", source: "Licensed", observed_at: "2026-08-01" },
+      { product_name: "Calming Serum", brand: "B", category: "Skincare", features: "calming barrier", price: "42", rating: "4.2", reviews: "120", review_complaints: "sticky packaging", monthly_sales: "700", conversion_rate: "1.8", cac: "28", url: "https://example.com/b", source: "Licensed", observed_at: "2026-08-02" },
+      { product_name: "Daily Serum", brand: "C", category: "Skincare", features: "daily hydration", price: "35", rating: "4.0", reviews: "80", review_complaints: "packaging leaks", monthly_sales: "500", conversion_rate: "1.5", cac: "30", url: "https://example.com/c", source: "Licensed", observed_at: "2026-07-30" },
     ],
   },
 };
@@ -53,6 +53,8 @@ describe("traceable analysis", () => {
     expect(result.demandScore).toBeGreaterThanOrEqual(0);
     expect(result.demandScore).toBeLessThanOrEqual(100);
     expect(result.scoreParts.every((part) => part.source)).toBe(true);
+    expect(result.priceRecommendation.status).toBe("Within comparable range");
+    expect(result.positioningRecommendation.message).toMatch(/sticky|packaging/);
   });
 
   it("ranks comparables and calculates scenario changes", () => {
@@ -75,5 +77,16 @@ describe("traceable analysis", () => {
     expect(evaluateSafety({ category: "Weapon accessories" }).level).toBe("Blocked");
     expect(evaluateSafety({ category: "Skincare", audience: "People with a health condition" }).level).toBe("Review required");
     expect(evaluateSafety({ category: "Skincare", description: "Daily moisturiser" }).level).toBe("Standard");
+  });
+
+  it("feeds completed experiment conversion and CAC results into the next forecast", () => {
+    const calibrated = analyzeProject({
+      ...project,
+      experiments: [{ status: "Complete", observedConversion: "2.8", observedCac: "21" }],
+    });
+    expect(calibrated.experimentConversion).toBe(2.8);
+    expect(calibrated.experimentCac).toBe(21);
+    expect(calibrated.projection.expected.conversion).toBe(2.8);
+    expect(calibrated.forecastSource).toBe("Completed experiment results");
   });
 });
